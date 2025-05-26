@@ -1,0 +1,118 @@
+import os
+import gradio as gr
+from dotenv import load_dotenv
+
+from brain_of_the_doctor import encode_image, analyze_image_with_query
+from voice_of_the_patient import transcribe_with_groq
+
+load_dotenv()
+# Doctor system prompt
+SYSTEM_PROMPT = (
+    "You have to act as a professional doctor, i know you are not but this is for learning purpose. "
+    "What's in this image? Do you find anything wrong with it medically? "
+    "If you make a differential, suggest some remedies for them. Donot add any numbers or special characters in "
+    "your response. Your response should be in one long paragraph. Also always answer as if you are answering to a real person. "
+    "Donot say 'In the image I see' but say 'With what I see, I think you have ....' "
+    "Dont respond as an AI model in markdown, your answer should mimic that of an actual doctor not an AI bot, "
+    "Keep your answer concise (max 2 sentences). No preamble, start your answer right away please"
+)
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
+# Live transcription from microphone
+def live_transcribe(audio_path):
+    if not audio_path:
+        return ""
+    return transcribe_with_groq(
+        stt_model="whisper-large-v3",
+        audio_filepath=audio_path,
+        GROQ_API_KEY=GROQ_API_KEY
+    )
+
+# Append user message to history
+def user_handler(message, history):
+    if not message:
+        return "", history
+    history.append({"role": "user", "content": message})
+    return "", history
+
+def respond_to_text(text_input):
+    # Process the text input and generate a response
+    response = f"Received your message: {text_input}"
+    return response
+
+# Generate doctor response for last message
+def bot_handler(history, image_path):
+    if not history:
+        return history
+    user_msg = history[-1]["content"]
+    prompt = SYSTEM_PROMPT + " " + user_msg
+    if image_path:
+        enc = encode_image(image_path)
+        reply = analyze_image_with_query(prompt, enc)
+    else:
+        reply = analyze_image_with_query(prompt, encode_image("")) if user_msg else "No image provided for analysis."
+    history.append({"role": "assistant", "content": reply})
+    return history
+
+
+with gr.Blocks() as demo:
+    gr.Markdown("## AI Doctor Chat: Voice & Text Inputs + Image Analysis")
+    text_input = gr.Textbox(label="Enter your query", placeholder="Type your question here...")
+    output = gr.Textbox(label="Response")
+    submit_button = gr.Button("Submit")
+
+    with gr.Row():
+        mic = gr.Audio(sources=["microphone"], type="filepath", label="Speak to Doctor")
+        img = gr.Image(type="filepath", label="Upload Image (optional)")
+
+    
+
+    # Live transcription display
+    transcript = gr.Textbox(label="Live Transcription", interactive=False)
+
+    # Manual text input below microphone
+    text_input = gr.Textbox(label="Or type your question", placeholder="Type here and press Enter")
+
+    # Chat history
+    chatbot = gr.Chatbot(type="messages", label="Conversation History")
+
+    # Button to analyze voice-derived transcript and image
+    analyze_btn = gr.Button("Analyze & Diagnose")
+
+    # Streaming audio to live transcription
+    mic.stream(
+        fn=live_transcribe,
+        inputs=[mic],
+        outputs=[transcript],
+        time_limit=20,
+        stream_every=1,
+        concurrency_limit=1
+    )
+
+    # When user presses Enter in text_input: add to history and get bot reply
+    text_input.submit(
+        fn=user_handler,
+        inputs=[text_input, chatbot],
+        outputs=[text_input, chatbot],
+        queue=False
+    ).then(
+        fn=bot_handler,
+        inputs=[chatbot, img],
+        outputs=chatbot
+    )
+
+    # When analyze button clicked: treat live transcription as user input
+    analyze_btn.click(
+        fn=user_handler,
+        inputs=[transcript, chatbot],
+        outputs=[transcript, chatbot],
+        queue=False
+    ).then(
+        fn=bot_handler,
+        inputs=[chatbot, img],
+        outputs=chatbot
+    )
+
+# Launch the app
+demo.launch(debug=True)  # share=False for local only
+

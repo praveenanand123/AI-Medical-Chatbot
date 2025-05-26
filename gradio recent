@@ -1,0 +1,60 @@
+import gradio as gr
+from brain_of_the_doctor import analyze_input
+
+# Define a custom theme with specified color palette
+custom_theme = gr.themes.Base(
+    primary_hue="blue",
+    secondary_hue="gray",
+    neutral_hue="gray"
+).set(
+    body_background_fill="#f0f4f8",  # Light grey background
+    body_text_color="#1f2937",       # Dark grey text
+    button_primary_background_fill="#60a5fa",  # Light blue buttons
+    button_primary_text_color="#ffffff",       # White button text
+    input_background_fill="#ffffff",           # White input fields
+    input_border_color="#d1d5db",              # Light grey borders
+    block_background_fill="#ffffff",           # White blocks
+    block_border_color="#e5e7eb"               # Light grey block borders
+)
+
+
+def handle_inputs(text_input, image_input, audio_input):
+    result = analyze_input(
+        text_input=text_input,
+        image_input=image_input,
+        audio_input=audio_input
+    )
+    return result  # Ensure this is a dict or list for gr.JSON
+
+with gr.Blocks(theme=custom_theme) as demo:
+    gr.Markdown("## 🩺 AI Doctor - Diagnostics Specialist")
+
+    with gr.Row():
+        text_input = gr.Textbox(
+            label="Enter your query",
+            placeholder="Type your question here...",
+            lines=2
+        )
+        image_input = gr.Image(
+            label="Upload an image (optional)",
+            type="pil",
+            sources=["upload", "webcam"]
+        )
+        audio_input = gr.Audio(
+            label="Record or upload audio (optional)",
+            type="numpy",
+            sources=["microphone", "upload"]
+        )
+
+    submit_button = gr.Button("Submit")
+    output = gr.JSON(label="Response")
+
+    submit_button.click(
+        fn=handle_inputs,
+        inputs=[text_input, image_input, audio_input],
+        outputs=output
+    )
+
+demo.launch()
+
+
